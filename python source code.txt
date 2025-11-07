@@ -1,0 +1,241 @@
+# student_registration.py
+import tkinter as tk
+from tkinter import ttk, messagebox
+import mysql.connector
+from mysql.connector import Error
+import hashlib
+from datetime import datetime
+
+# ---------- DB CONFIG - change to your DB credentials ----------
+DB_CONFIG = {
+    'host': 'localhost',
+    'user': 'root',
+    'password': '',
+    'database': 'schooldb'
+}
+# ---------------------------------------------------------------
+
+# Departments and courses mapping (customize as needed)
+DEPT_COURSES = {
+    "Computer Science": ["BSc CS", "Diploma CS", "Certificate in Python", "Certificate in Java", "Certificate in Javascript"],
+    "Electrical": ["Diploma Electrical", "Electronics Basics"],
+    "Mechanical": ["Diploma Mechanical", "Auto Mechanics"],
+    "Business": ["BBA", "Certificate in Accounting"],
+    "Arts": ["BA", "Certificate in Design"]
+}
+
+def create_table_if_not_exists():
+    """Create students table if it doesn't exist."""
+    create_sql = """
+    CREATE TABLE IF NOT EXISTS students (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      full_name VARCHAR(150) NOT NULL,
+      gender ENUM('Male','Female','Other') NOT NULL,
+      email VARCHAR(150) UNIQUE,
+      phone VARCHAR(30),
+      dob DATE,
+      password_hash VARCHAR(255) NOT NULL,
+      address TEXT,
+      department VARCHAR(100),
+      course VARCHAR(100),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """
+    try:
+        conn = mysql.connector.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        cursor.execute(create_sql)
+        conn.commit()
+    except Error as e:
+        messagebox.showerror("DB Error", f"Could not ensure table exists: {e}")
+    finally:
+        if cursor: cursor.close()
+        if conn and conn.is_connected(): conn.close()
+
+def hash_password(password: str) -> str:
+    """Simple sha256 hash (for demo). Use bcrypt in production."""
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+
+class StudentRegistrationApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Student Registration")
+        self.configure(bg="#ffd1dc")  # light pink background similar to screenshot
+        self.resizable(False, False)
+
+        # Styling
+        lbl_font = ("Helvetica", 10)
+        entry_width = 30
+
+        # Header
+        header = tk.Label(self, text="STUDENT REGISTRATION FORM", font=("Helvetica", 14, "bold"),
+                          bg="#ffd1dc")
+        header.grid(row=0, column=0, columnspan=4, pady=(10, 12))
+
+        # Full Name
+        tk.Label(self, text="Full Name", bg="#ffd1dc", font=lbl_font).grid(row=1, column=0, sticky="e", padx=8, pady=4)
+        self.name_var = tk.StringVar()
+        tk.Entry(self, textvariable=self.name_var, width=entry_width).grid(row=1, column=1, padx=6, pady=4, columnspan=3, sticky="w")
+
+        # Gender
+        tk.Label(self, text="Gender", bg="#ffd1dc", font=lbl_font).grid(row=2, column=0, sticky="e", padx=8, pady=4)
+        self.gender_var = tk.StringVar(value="Male")
+        genders = [("Male","Male"), ("Female","Female"), ("Other","Other")]
+        col = 1
+        for text, val in genders:
+            tk.Radiobutton(self, text=text, variable=self.gender_var, value=val, bg="#ffd1dc").grid(row=2, column=col, sticky="w", padx=4)
+            col += 1
+
+        # Email
+        tk.Label(self, text="Email", bg="#ffd1dc", font=lbl_font).grid(row=3, column=0, sticky="e", padx=8, pady=4)
+        self.email_var = tk.StringVar()
+        tk.Entry(self, textvariable=self.email_var, width=entry_width).grid(row=3, column=1, padx=6, pady=4, columnspan=3, sticky="w")
+
+        # Phone
+        tk.Label(self, text="Phone", bg="#ffd1dc", font=lbl_font).grid(row=4, column=0, sticky="e", padx=8, pady=4)
+        self.phone_var = tk.StringVar()
+        tk.Entry(self, textvariable=self.phone_var, width=entry_width).grid(row=4, column=1, padx=6, pady=4, columnspan=3, sticky="w")
+
+        # DOB
+        tk.Label(self, text="DOB (YYYY-MM-DD)", bg="#ffd1dc", font=lbl_font).grid(row=5, column=0, sticky="e", padx=8, pady=4)
+        self.dob_var = tk.StringVar()
+        tk.Entry(self, textvariable=self.dob_var, width=entry_width).grid(row=5, column=1, padx=6, pady=4, columnspan=3, sticky="w")
+
+        # Password
+        tk.Label(self, text="Password", bg="#ffd1dc", font=lbl_font).grid(row=6, column=0, sticky="e", padx=8, pady=4)
+        self.pass_var = tk.StringVar()
+        tk.Entry(self, textvariable=self.pass_var, width=entry_width, show="*").grid(row=6, column=1, padx=6, pady=4, columnspan=3, sticky="w")
+
+        # Address
+        tk.Label(self, text="Address", bg="#ffd1dc", font=lbl_font).grid(row=7, column=0, sticky="ne", padx=8, pady=4)
+        self.address_txt = tk.Text(self, width=35, height=3)
+        self.address_txt.grid(row=7, column=1, columnspan=3, padx=6, pady=4, sticky="w")
+
+        # Department (Combobox)
+        tk.Label(self, text="Department", bg="#ffd1dc", font=lbl_font).grid(row=8, column=0, sticky="e", padx=8, pady=4)
+        self.dept_var = tk.StringVar()
+        self.dept_cb = ttk.Combobox(self, textvariable=self.dept_var, values=list(DEPT_COURSES.keys()), state="readonly", width=28)
+        self.dept_cb.grid(row=8, column=1, padx=6, pady=4, sticky="w")
+        self.dept_cb.bind("<<ComboboxSelected>>", self.on_dept_change)
+
+        # Course (Combobox)
+        tk.Label(self, text="Course", bg="#ffd1dc", font=lbl_font).grid(row=8, column=2, sticky="e", padx=8, pady=4)
+        self.course_var = tk.StringVar()
+        self.course_cb = ttk.Combobox(self, textvariable=self.course_var, values=[], state="readonly", width=28)
+        self.course_cb.grid(row=8, column=3, padx=6, pady=4, sticky="w")
+
+        # Buttons
+        btn_frame = tk.Frame(self, bg="#ffd1dc")
+        btn_frame.grid(row=9, column=0, columnspan=4, pady=(10, 12))
+
+        reset_btn = tk.Button(btn_frame, text="Reset", width=12, command=self.reset_form)
+        reset_btn.pack(side="left", padx=8)
+
+        submit_btn = tk.Button(btn_frame, text="Submit Form", width=12, command=self.submit_form)
+        submit_btn.pack(side="left", padx=8)
+
+        # Initialize DB table
+        create_table_if_not_exists()
+
+    def on_dept_change(self, event=None):
+        dept = self.dept_var.get()
+        courses = DEPT_COURSES.get(dept, [])
+        self.course_cb['values'] = courses
+        if courses:
+            self.course_var.set(courses[0])
+        else:
+            self.course_var.set("")
+
+    def reset_form(self):
+        self.name_var.set("")
+        self.gender_var.set("Male")
+        self.email_var.set("")
+        self.phone_var.set("")
+        self.dob_var.set("")
+        self.pass_var.set("")
+        self.address_txt.delete('1.0', tk.END)
+        self.dept_var.set("")
+        self.course_cb['values'] = []
+        self.course_var.set("")
+
+    def submit_form(self):
+        # gather fields
+        full_name = self.name_var.get().strip()
+        gender = self.gender_var.get()
+        email = self.email_var.get().strip()
+        phone = self.phone_var.get().strip()
+        dob_str = self.dob_var.get().strip()
+        password = self.pass_var.get()
+        address = self.address_txt.get('1.0', tk.END).strip()
+        department = self.dept_var.get()
+        course = self.course_var.get()
+
+        # basic validation
+        if not full_name:
+            messagebox.showwarning("Validation", "Please enter full name.")
+            return
+        if not password or len(password) < 4:
+            messagebox.showwarning("Validation", "Password required (min 4 chars).")
+            return
+        # validate DOB format if provided
+        dob = None
+        if dob_str:
+            try:
+                dob = datetime.strptime(dob_str, "%Y-%m-%d").date()
+            except ValueError:
+                messagebox.showwarning("Validation", "DOB must be YYYY-MM-DD (or leave blank).")
+                return
+
+        # hash password (demo)
+        password_hash = hash_password(password)
+
+        # Insert into DB (parameterized)
+        insert_sql = """
+            INSERT INTO students
+            (full_name, gender, email, phone, dob, password_hash, address, department, course)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """
+        values = (full_name, gender, email or None, phone or None, dob if dob else None,
+                  password_hash, address or None, department or None, course or None)
+
+        try:
+            conn = mysql.connector.connect(**DB_CONFIG)
+            cursor = conn.cursor()
+            cursor.execute(insert_sql, values)
+            conn.commit()
+            messagebox.showinfo("Success", "Student registered successfully!")
+            self.reset_form()
+        except mysql.connector.IntegrityError as ie:
+            # duplicate email etc.
+            messagebox.showerror("DB Error", f"Integrity error: {ie}")
+        except Error as e:
+            messagebox.showerror("DB Error", f"Database error: {e}")
+        finally:
+            if cursor: cursor.close()
+            if conn and conn.is_connected(): conn.close()
+
+
+if __name__ == "__main__":
+    app = StudentRegistrationApp()
+    app.mainloop()
+
+
+
+
+
+CREATE DATABASE IF NOT EXISTS schooldb;
+USE schooldb;
+
+CREATE TABLE IF NOT EXISTS students (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  full_name VARCHAR(150) NOT NULL,
+  gender ENUM('Male','Female','Other') NOT NULL,
+  email VARCHAR(150) UNIQUE,
+  phone VARCHAR(30),
+  dob DATE,
+  password_hash VARCHAR(255) NOT NULL,
+  address TEXT,
+  department VARCHAR(100),
+  course VARCHAR(100),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
